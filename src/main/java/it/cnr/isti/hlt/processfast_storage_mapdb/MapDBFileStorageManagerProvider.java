@@ -9,7 +9,7 @@ import java.io.File;
 
 /**
  * @author Tiziano Fagni (tiziano.fagni@isti.cnr.it)
- */
+- */
 public class MapDBFileStorageManagerProvider extends AbstractMapDBStorageManagerProvider {
 
     /**
