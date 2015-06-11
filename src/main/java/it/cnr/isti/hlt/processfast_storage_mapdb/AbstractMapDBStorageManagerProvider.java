@@ -1,7 +1,11 @@
 package it.cnr.isti.hlt.processfast_storage_mapdb;
 
 import it.cnr.isti.hlt.processfast.data.StorageManagerProvider;
+import it.cnr.isti.hlt.processfast.utils.Function1;
+import it.cnr.isti.hlt.processfast.utils.Procedure0;
+import it.cnr.isti.hlt.processfast.utils.Procedure1;
 import org.mapdb.DB;
+import org.mapdb.TxMaker;
 
 /**
  * @author Tiziano Fagni (tiziano.fagni@isti.cnr.it)
@@ -11,15 +15,20 @@ public abstract class AbstractMapDBStorageManagerProvider implements StorageMana
     /**
      * The MapDB db instance manager.
      */
-    protected DB db;
+    protected TxMaker txMaker;
+
+    public TxMaker getTxMaker() {
+        return txMaker;
+    }
 
 
     /**
-     * Get the internal used MapDB db instance.
+     * Create a new transaction to use to perform operations.
      *
-     * @return The internal used MapDB db instance.
+     * @return A new transaction to perform operations.
      */
-    public DB getDb() {
-        return db;
+    public DB tx() {
+        return txMaker.makeTx();
     }
+
 }

@@ -1,11 +1,11 @@
 package it.cnr.isti.hlt.processfast_storage_mapdb;
 
 import it.cnr.isti.hlt.processfast.data.StorageManager;
-import it.cnr.isti.hlt.processfast.data.StorageManagerProvider;
-import org.mapdb.DB;
 import org.mapdb.DBMaker;
 
 import java.io.File;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * @author Tiziano Fagni (tiziano.fagni@isti.cnr.it)
@@ -19,6 +19,7 @@ public class MapDBFileStorageManagerProvider extends AbstractMapDBStorageManager
 
 
     private boolean createIfNotExistant;
+
 
     public MapDBFileStorageManagerProvider(String dbFilename, boolean createIfNotExistant) {
         if (dbFilename == null || dbFilename.isEmpty())
@@ -40,12 +41,12 @@ public class MapDBFileStorageManagerProvider extends AbstractMapDBStorageManager
         if (!f.exists() && !createIfNotExistant)
             throw new IllegalArgumentException("Can not open db at " + dbFilename + ". The file does not exist!");
 
-        db = DBMaker.newFileDB(f).closeOnJvmShutdown().transactionDisable().make();
+        txMaker = DBMaker.newFileDB(f).closeOnJvmShutdown().transactionDisable().makeTxMaker();
     }
 
     @Override
     public void close() {
-        if (!db.isClosed())
-            db.close();
+       txMaker.close();
     }
+
 }

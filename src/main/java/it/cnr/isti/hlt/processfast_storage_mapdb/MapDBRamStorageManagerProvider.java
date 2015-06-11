@@ -40,17 +40,16 @@ public class MapDBRamStorageManagerProvider extends AbstractMapDBStorageManagerP
     @Override
     public void open() {
         if (storageType == MapDBRamStorageType.MEMORY_DIRECT_DB)
-            db = DBMaker.newMemoryDirectDB().closeOnJvmShutdown().transactionDisable().make();
+            txMaker = DBMaker.newMemoryDirectDB().closeOnJvmShutdown().transactionDisable().makeTxMaker();
         else if (storageType == MapDBRamStorageType.MEMORY_DB)
-            db = DBMaker.newMemoryDB().closeOnJvmShutdown().transactionDisable().make();
+            txMaker = DBMaker.newMemoryDB().closeOnJvmShutdown().transactionDisable().makeTxMaker();
         else
-            db = DBMaker.newHeapDB().closeOnJvmShutdown().transactionDisable().make();
+            txMaker = DBMaker.newHeapDB().closeOnJvmShutdown().transactionDisable().makeTxMaker();
     }
 
     @Override
     public void close() {
-        if (!db.isClosed())
-            db.close();
+        txMaker.close();
     }
 
     public MapDBRamStorageType getStorageType() {
