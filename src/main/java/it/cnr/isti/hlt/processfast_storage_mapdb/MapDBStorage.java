@@ -1,6 +1,7 @@
 /*
- * *****************
- *  Copyright 2015 Tiziano Fagni (tiziano.fagni@isti.cnr.it)
+ *
+ * ****************
+ * Copyright 2015 Tiziano Fagni (tiziano.fagni@isti.cnr.it)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,16 +14,14 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * *******************
+ * ******************
  */
 
 package it.cnr.isti.hlt.processfast_storage_mapdb;
 
 import it.cnr.isti.hlt.processfast.data.*;
-import org.mapdb.BTreeMap;
 import org.mapdb.DB;
 import org.mapdb.HTreeMap;
-import org.mapdb.Serializer;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -37,6 +36,11 @@ public class MapDBStorage implements Storage {
     private static final String ARRAY_PREFIX = "storage_arrays_";
     private static final String ARRAY_NUM_KEYS = "storage_arrays_keys";
     private static final String ARRAY_KEY_PREFIX = "storage_array_k_";
+
+    private static final String MATRIX_PREFIX = "storage_matrixes_";
+    private static final String MATRIX_NUM_KEYS = "storage_matrix_keys";
+    private static final String MATRIX_KEY_PREFIX = "storage_matrix_k_";
+
     private static final int MAX_NUM_RETRIES = 10;
 
     MapDBStorageManager sm;
@@ -72,12 +76,10 @@ public class MapDBStorage implements Storage {
 
     @Override
     public List<String> getArrayNames() {
-
         ArrayList<String> toRet = DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
             return getArrayNames(db, storageID);
         });
         return toRet;
-
     }
 
     protected static ArrayList<String> getArrayNames(DB db, long storageID) {
@@ -116,6 +118,10 @@ public class MapDBStorage implements Storage {
 
     private String computeArrayName(String name) {
         return ARRAY_KEY_PREFIX + name;
+    }
+
+    private String computeMatrixName(String name) {
+        return MATRIX_KEY_PREFIX + name;
     }
 
     @Override
@@ -170,13 +176,46 @@ public class MapDBStorage implements Storage {
 
     @Override
     public List<String> getMatrixNames() {
-        return null;
+        ArrayList<String> toRet = DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            return getMatrixNames(db, storageID);
+        });
+        return toRet;
     }
+
+
+    protected static ArrayList<String> getMatrixNames(DB db, long storageID) {
+        HTreeMap<String, Long> mapStorages = db.getHashMap(MATRIX_PREFIX + storageID);
+        Iterator<String> keys = mapStorages.keySet().iterator();
+        ArrayList<String> ret = new ArrayList<>();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (key.equals(MATRIX_NUM_KEYS))
+                continue;
+            ret.add(key);
+        }
+        return ret;
+    }
+
 
     @Override
     public boolean containsMatrixName(String name) {
-        return false;
+        if (name == null || name.isEmpty())
+            throw new IllegalArgumentException("The name is 'null' or empty");
+
+        return DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            return containsMatrixName(db, name);
+        });
     }
+
+    public boolean containsMatrixName(DB db, String name) {
+        if (name == null || name.isEmpty())
+            throw new IllegalArgumentException("The name is 'null' or empty");
+
+        HTreeMap<String, Long> mapStorages = db.getHashMap(MATRIX_PREFIX + storageID);
+        return mapStorages.containsKey(computeMatrixName(name));
+
+    }
+
 
     @Override
     public <T extends Serializable> Matrix<T> createMatrix(String name, Class<T> cl, long numRows, long numCols) {
