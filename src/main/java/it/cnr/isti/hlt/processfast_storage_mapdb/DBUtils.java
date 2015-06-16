@@ -28,22 +28,16 @@ import org.mapdb.TxMaker;
  * Created by Tiziano on 10/06/2015.
  */
 public class DBUtils {
-    /*public static void atomic(DB db, int maxNumRetries, Procedure1<DB> code) {
-        Exception lastException = null;
-        for (int i = 0; i < maxNumRetries; i++) {
-            try {
-                code.call(db);
-                db.commit();
-                return;
-            } catch (Exception e) {
-                db.rollback();
-                lastException = e;
-            }
-        }
 
-        throw new RuntimeException("Unable to perform transaction correctly", lastException);
-    }*/
-
+    /**
+     * Perform atomic operations on a single DB transaction. If atomic operations failed,
+     * it will retry to perform the operations specified in "code" at maximum "maxNumRetries"
+     * times.
+     *
+     * @param txMaker       The DB connection.
+     * @param maxNumRetries The maximum number of tries to perform.
+     * @param code          The code to be executed atomically.
+     */
     public static void atomic(TxMaker txMaker, int maxNumRetries, Procedure1<DB> code) {
         Exception lastException = null;
         for (int i = 0; i < maxNumRetries; i++) {
@@ -63,23 +57,17 @@ public class DBUtils {
         throw new RuntimeException("Unable to perform transaction correctly", lastException);
     }
 
-    /*public static <Out> Out atomicGet(DB db, int maxNumRetries, Function1<DB, Out> code) {
-        Exception lastException = null;
-        for (int i = 0; i < maxNumRetries; i++) {
-            try {
-                Out out = code.call(db);
-                db.commit();
-                return out;
-            } catch (Exception e) {
-                db.rollback();
-                lastException = e;
-            }
-        }
 
-        throw new RuntimeException("Unable to perform transaction correctly", lastException);
-    }*/
-
-
+    /**
+     * Perform atomic operations on a single DB transaction. If atomic operations failed,
+     * it will retry to perform the operations specified in "code" at maximum "maxNumRetries"
+     * times. The function upon successful execution of the code will return a proper result.
+     *
+     * @param txMaker The DB connection.
+     * @param maxNumRetries The maximum number of tries to perform.
+     * @param code The code to be executed atomically.
+     * @return The result from execution of code.
+     */
     public static <Out> Out atomicGet(TxMaker txMaker, int maxNumRetries, Function1<DB, Out> code) {
         Exception lastException = null;
         for (int i = 0; i < maxNumRetries; i++) {

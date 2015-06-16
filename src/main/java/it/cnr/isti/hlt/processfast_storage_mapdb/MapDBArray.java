@@ -41,7 +41,7 @@ public class MapDBArray<T extends Serializable> implements Array<T> {
     private static final String DEFAULT_VALUE_PREFIX = "arr_default_value_";
 
     private final long arrayID;
-    private MapDBStorage storage;
+    private final MapDBStorage storage;
     private final String name;
 
 
