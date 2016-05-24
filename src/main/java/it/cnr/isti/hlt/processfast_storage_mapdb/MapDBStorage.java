@@ -1,6 +1,7 @@
 /*
- * *****************
- *  Copyright 2015 Tiziano Fagni (tiziano.fagni@isti.cnr.it)
+ *
+ * ****************
+ * Copyright 2015 Tiziano Fagni (tiziano.fagni@isti.cnr.it)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +14,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * *******************
+ * ******************
  */
 
 package it.cnr.isti.hlt.processfast_storage_mapdb;
@@ -32,13 +33,18 @@ import java.util.List;
  */
 public class MapDBStorage implements Storage {
 
-    private static final String ARRAY_PREFIX = "storage_array_";
-    private static final String ARRAY_NUM_KEYS = "storage_array_keys";
+    private static final String ARRAY_PREFIX = "storage_arrays_";
+    private static final String ARRAY_NUM_KEYS = "storage_arrays_keys";
     private static final String ARRAY_KEY_PREFIX = "storage_array_k_";
+
+    private static final String MATRIX_PREFIX = "storage_matrixes_";
+    private static final String MATRIX_NUM_KEYS = "storage_matrix_keys";
+    private static final String MATRIX_KEY_PREFIX = "storage_matrix_k_";
+
     private static final int MAX_NUM_RETRIES = 10;
 
     MapDBStorageManager sm;
-    private long storageID;
+    private final long storageID;
     private String storageName;
 
     public MapDBStorage(MapDBStorageManager sm, String storageName, long storageID) {
@@ -49,6 +55,18 @@ public class MapDBStorage implements Storage {
         this.sm = sm;
         this.storageID = storageID;
         this.storageName = storageName;
+
+        createInitialStructures();
+    }
+
+    private void createInitialStructures() {
+        // Create array structure, if not available.
+        DBUtils.atomic(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            if (!db.exists(ARRAY_PREFIX + storageID)) {
+                HTreeMap<String, Long> map = db.createHashMap(ARRAY_PREFIX + storageID).counterEnable().makeOrGet();
+            }
+        });
+
     }
 
     @Override
@@ -58,43 +76,52 @@ public class MapDBStorage implements Storage {
 
     @Override
     public List<String> getArrayNames() {
-        DB tx = sm.provider.tx();
-        try {
-            ArrayList<String> toRet = DBUtils.atomicGet(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(ARRAY_PREFIX +storageID);
-                Iterator<String> keys = mapStorages.keySet().iterator();
-                ArrayList<String> ret = new ArrayList<>();
-                while (keys.hasNext()) {
-                    String key = keys.next();
-                    if (key.equals(ARRAY_NUM_KEYS))
-                        continue;
-                    ret.add(key);
-                }
-                return ret;
-            });
-            return toRet;
-        } finally {
-            tx.close();
-        }
+        ArrayList<String> toRet = DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            return getArrayNames(db, storageID);
+        });
+        return toRet;
     }
+
+    protected static ArrayList<String> getArrayNames(DB db, long storageID) {
+        HTreeMap<String, Long> mapStorages = db.getHashMap(ARRAY_PREFIX + storageID);
+        Iterator<String> keys = mapStorages.keySet().iterator();
+        ArrayList<String> ret = new ArrayList<>();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (key.equals(ARRAY_NUM_KEYS))
+                continue;
+            ret.add(key);
+        }
+        return ret;
+    }
+
 
     @Override
     public boolean containsArrayName(String name) {
         if (name == null || name.isEmpty())
             throw new IllegalArgumentException("The name is 'null' or empty");
-        DB tx = sm.provider.tx();
-        try {
-            return DBUtils.atomicGet(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(ARRAY_PREFIX+storageID);
-                return mapStorages.containsKey(computeArrayName(name));
-            });
-        } finally {
-            tx.close();
-        }
+
+        return DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            return containsArrayName(db, name);
+        });
+    }
+
+
+    public boolean containsArrayName(DB db, String name) {
+        if (name == null || name.isEmpty())
+            throw new IllegalArgumentException("The name is 'null' or empty");
+
+        HTreeMap<String, Long> mapStorages = db.getHashMap(ARRAY_PREFIX + storageID);
+        return mapStorages.containsKey(computeArrayName(name));
+
     }
 
     private String computeArrayName(String name) {
         return ARRAY_KEY_PREFIX + name;
+    }
+
+    private String computeMatrixName(String name) {
+        return MATRIX_KEY_PREFIX + name;
     }
 
     @Override
@@ -102,28 +129,23 @@ public class MapDBStorage implements Storage {
         if (name == null || name.isEmpty())
             throw new IllegalArgumentException("The name is 'null' or empty");
 
-        long arrayIdx;
-        DB tx = sm.provider.tx();
-        try {
-            arrayIdx = DBUtils.atomicGet(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapArrays = db.getHashMap(ARRAY_PREFIX+storageID);
-                long idx = 0;
-                if (containsArrayName(name)) {
-                    idx = mapArrays.get(computeArrayName(name));
-                } else {
-                    long nextID = 0;
-                    mapArrays.putIfAbsent(ARRAY_NUM_KEYS, 0l);
-                    nextID = mapArrays.get(ARRAY_NUM_KEYS);
-                    mapArrays.put(computeArrayName(name), nextID);
-                    idx = nextID;
-                }
-                return idx;
-            });
-        } finally {
-            tx.close();
-        }
+        long arrayIdx = DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapArrays = db.getHashMap(ARRAY_PREFIX + storageID);
+            long idx = 0;
+            if (containsArrayName(db, name)) {
+                idx = mapArrays.get(computeArrayName(name));
+            } else {
+                long nextID = 0;
+                mapArrays.putIfAbsent(ARRAY_NUM_KEYS, 0l);
+                nextID = mapArrays.get(ARRAY_NUM_KEYS);
+                mapArrays.put(computeArrayName(name), nextID);
+                mapArrays.put(ARRAY_NUM_KEYS, nextID + 1);
+                idx = nextID;
+            }
+            return idx;
+        });
 
-        return new MapDBArray<T>(this, arrayIdx);
+        return new MapDBArray<T>(this, name, arrayIdx);
     }
 
     @Override
@@ -131,17 +153,12 @@ public class MapDBStorage implements Storage {
         if (!containsArrayName(computeArrayName(name)))
             return;
 
-        DB tx = sm.provider.tx();
-        try {
-            DBUtils.atomic(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapArrays = db.getHashMap(ARRAY_PREFIX+storageID);
-                long arrayID = mapArrays.get(computeArrayName(name));
-                mapArrays.remove(computeArrayName(name));
-                MapDBArray.removeArray(db, arrayID);
-            });
-        } finally {
-            tx.close();
-        }
+        DBUtils.atomic(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapArrays = db.getHashMap(ARRAY_PREFIX + storageID);
+            long arrayID = mapArrays.get(computeArrayName(name));
+            mapArrays.remove(computeArrayName(name));
+            MapDBArray.removeArray(db, storageID, arrayID);
+        });
     }
 
     @Override
@@ -149,41 +166,105 @@ public class MapDBStorage implements Storage {
         if (!containsArrayName(name))
             return null;
 
-        DB tx = sm.provider.tx();
-        try {
-            return DBUtils.atomicGet(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(ARRAY_PREFIX+storageID);
-                long arrayID = mapStorages.get(computeArrayName(name));
-                return new MapDBArray(this, arrayID);
-            });
-        } finally {
-            tx.close();
-        }
+        long arrayID = DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapStorages = db.getHashMap(ARRAY_PREFIX + storageID);
+            return mapStorages.get(computeArrayName(name));
+        });
+
+        return new MapDBArray(this, name, arrayID);
     }
 
     @Override
     public List<String> getMatrixNames() {
-        return null;
+        ArrayList<String> toRet = DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            return getMatrixNames(db, storageID);
+        });
+        return toRet;
     }
+
+
+    protected static ArrayList<String> getMatrixNames(DB db, long storageID) {
+        HTreeMap<String, Long> mapStorages = db.getHashMap(MATRIX_PREFIX + storageID);
+        Iterator<String> keys = mapStorages.keySet().iterator();
+        ArrayList<String> ret = new ArrayList<>();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (key.equals(MATRIX_NUM_KEYS))
+                continue;
+            ret.add(key);
+        }
+        return ret;
+    }
+
 
     @Override
     public boolean containsMatrixName(String name) {
-        return false;
+        if (name == null || name.isEmpty())
+            throw new IllegalArgumentException("The name is 'null' or empty");
+
+        return DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            return containsMatrixName(db, name);
+        });
     }
+
+    public boolean containsMatrixName(DB db, String name) {
+        if (name == null || name.isEmpty())
+            throw new IllegalArgumentException("The name is 'null' or empty");
+
+        HTreeMap<String, Long> mapStorages = db.getHashMap(MATRIX_PREFIX + storageID);
+        return mapStorages.containsKey(computeMatrixName(name));
+
+    }
+
 
     @Override
     public <T extends Serializable> Matrix<T> createMatrix(String name, Class<T> cl, long numRows, long numCols) {
-        return null;
+        if (name == null || name.isEmpty())
+            throw new IllegalArgumentException("The name is 'null' or empty");
+
+        long matrixIdx = DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapArrays = db.getHashMap(MATRIX_PREFIX + storageID);
+            long idx = 0;
+            if (containsMatrixName(db, name)) {
+                idx = mapArrays.get(computeMatrixName(name));
+            } else {
+                long nextID = 0;
+                mapArrays.putIfAbsent(MATRIX_NUM_KEYS, 0l);
+                nextID = mapArrays.get(MATRIX_NUM_KEYS);
+                mapArrays.put(computeMatrixName(name), nextID);
+                mapArrays.put(MATRIX_NUM_KEYS, nextID + 1);
+                idx = nextID;
+            }
+            return idx;
+        });
+
+        return new MapDBMatrix<T>(this, name, matrixIdx);
     }
 
     @Override
     public void removeMatrix(String name) {
+        if (!containsMatrixName(computeMatrixName(name)))
+            return;
 
+        DBUtils.atomic(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapMatrixes = db.getHashMap(MATRIX_PREFIX + storageID);
+            long matrixID = mapMatrixes.get(computeMatrixName(name));
+            mapMatrixes.remove(computeMatrixName(name));
+            MapDBMatrix.removeMatrix(db, storageID, matrixID);
+        });
     }
 
     @Override
     public <T extends Serializable> Matrix<T> getMatrix(String name, Class<T> cl) {
-        return null;
+        if (!containsMatrixName(name))
+            return null;
+
+        long matrixID = DBUtils.atomicGet(sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapStorages = db.getHashMap(MATRIX_PREFIX + storageID);
+            return mapStorages.get(computeMatrixName(name));
+        });
+
+        return new MapDBMatrix(this, name, matrixID);
     }
 
     @Override
@@ -244,5 +325,28 @@ public class MapDBStorage implements Storage {
 
     static void removeStorage(DB db, long storageID) {
 
+        // Remove all arrays.
+        HTreeMap<String, Long> mapArrays = db.getHashMap(ARRAY_PREFIX + storageID);
+        Iterator<String> keys = mapArrays.keySet().iterator();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            long arrayID = mapArrays.get(key);
+            MapDBArray.removeArray(db, storageID, arrayID);
+        }
+        db.delete(ARRAY_PREFIX + storageID);
+
+        // Remove all matrixes.
+        HTreeMap<String, Long> mapMatrixes = db.getHashMap(MATRIX_PREFIX + storageID);
+        keys = mapMatrixes.keySet().iterator();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            long matrixID = mapMatrixes.get(key);
+            MapDBMatrix.removeMatrix(db, storageID, matrixID);
+        }
+        db.delete(MATRIX_PREFIX + storageID);
+    }
+
+    public long getStorageID() {
+        return storageID;
     }
 }

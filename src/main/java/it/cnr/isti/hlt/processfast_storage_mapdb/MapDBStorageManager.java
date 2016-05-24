@@ -1,6 +1,7 @@
 /*
- * *****************
- *  Copyright 2015 Tiziano Fagni (tiziano.fagni@isti.cnr.it)
+ *
+ * ****************
+ * Copyright 2015 Tiziano Fagni (tiziano.fagni@isti.cnr.it)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +14,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * *******************
+ * ******************
  */
 
 package it.cnr.isti.hlt.processfast_storage_mapdb;
@@ -40,64 +41,53 @@ public class MapDBStorageManager implements StorageManager {
     private static final int MAX_NUM_RETRIES = 10;
 
 
-
+    @Override
+    public List<String> getStorageNames() {
+        ArrayList<String> toRet = DBUtils.atomicGet(provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
+            Iterator<String> keys = mapStorages.keySet().iterator();
+            ArrayList<String> ret = new ArrayList<>();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                if (key.equals(NUM_STORAGES_KEY))
+                    continue;
+                ret.add(key);
+            }
+            return ret;
+        });
+        return toRet;
+    }
 
     public MapDBStorageManager(AbstractMapDBStorageManagerProvider provider) {
         if (provider == null)
             throw new NullPointerException("The storage manager provider is 'null'");
         this.provider = provider;
 
-        DB tx = provider.tx();
-        try {
-            DBUtils.atomic(tx, 1, db -> {
-                HTreeMap<String, Long> mapStorages = db.createHashMap(STORAGE_TABLE_NAME)
-                        .keySerializer(Serializer.STRING)
-                        .valueSerializer(Serializer.LONG)
-                        .makeOrGet();
-            });
-        } finally {
-            tx.close();
-        }
-
-    }
-
-    @Override
-    public List<String> getStorageNames() {
-
-        DB tx = provider.tx();
-        try {
-            ArrayList<String> toRet = DBUtils.atomicGet(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
-                Iterator<String> keys = mapStorages.keySet().iterator();
-                ArrayList<String> ret = new ArrayList<>();
-                while (keys.hasNext()) {
-                    String key = keys.next();
-                    if (key.equals(NUM_STORAGES_KEY))
-                        continue;
-                    ret.add(key);
-                }
-                return ret;
-            });
-            return toRet;
-        } finally {
-            tx.close();
-        }
-
+        DBUtils.atomic(provider.txMaker(), 1, db -> {
+            HTreeMap<String, Long> mapStorages = db.createHashMap(STORAGE_TABLE_NAME)
+                    .keySerializer(Serializer.STRING)
+                    .valueSerializer(Serializer.LONG)
+                    .makeOrGet();
+        });
     }
 
     @Override
     public boolean containsStorageName(String name) {
         if (name == null || name.isEmpty())
             throw new IllegalArgumentException("The name is 'null' or empty");
-        DB tx = provider.tx();
-        try {
-            return DBUtils.atomicGet(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
-                return mapStorages.containsKey(computeStorageName(name));
-            });
-        } finally {
-            tx.close();
-        }
+
+        return DBUtils.atomicGet(provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
+            return mapStorages.containsKey(computeStorageName(name));
+        });
+    }
+
+    public boolean containsStorageName(DB db, String name) {
+        if (name == null || name.isEmpty())
+            throw new IllegalArgumentException("The name is 'null' or empty");
+
+        HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
+        return mapStorages.containsKey(computeStorageName(name));
 
     }
 
@@ -110,29 +100,20 @@ public class MapDBStorageManager implements StorageManager {
         if (name == null || name.isEmpty())
             throw new IllegalArgumentException("The name is 'null' or empty");
 
-        long storageIdx;
-
-        DB tx = provider.tx();
-        try {
-            storageIdx = DBUtils.atomicGet(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
-                long idx = 0;
-                if (containsStorageName(name)) {
-                    idx = mapStorages.get(computeStorageName(name));
-                } else {
-                    long nextID = 0;
-                    mapStorages.putIfAbsent(NUM_STORAGES_KEY, nextID);
-                    nextID = mapStorages.get(NUM_STORAGES_KEY);
-                    mapStorages.put(computeStorageName(name), nextID);
-                    idx = nextID;
-                }
-                return idx;
-            });
-        } finally {
-            tx.close();
-        }
-
-
+        long storageIdx = DBUtils.atomicGet(provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
+            long idx = 0;
+            if (containsStorageName(db, name)) {
+                idx = mapStorages.get(computeStorageName(name));
+            } else {
+                long nextID = 0;
+                mapStorages.putIfAbsent(NUM_STORAGES_KEY, nextID);
+                nextID = mapStorages.get(NUM_STORAGES_KEY);
+                mapStorages.put(computeStorageName(name), nextID);
+                idx = nextID;
+            }
+            return idx;
+        });
 
         return new MapDBStorage(this, name, storageIdx);
     }
@@ -142,17 +123,12 @@ public class MapDBStorageManager implements StorageManager {
         if (!containsStorageName(computeStorageName(name)))
             return;
 
-        DB tx = provider.tx();
-        try {
-            DBUtils.atomic(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
-                long storageID = mapStorages.get(computeStorageName(name));
-                mapStorages.remove(computeStorageName(name));
-                MapDBStorage.removeStorage(db, storageID);
-            });
-        } finally {
-            tx.close();
-        }
+        DBUtils.atomic(provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
+            long storageID = mapStorages.get(computeStorageName(name));
+            mapStorages.remove(computeStorageName(name));
+            MapDBStorage.removeStorage(db, storageID);
+        });
     }
 
     @Override
@@ -160,16 +136,12 @@ public class MapDBStorageManager implements StorageManager {
         if (!containsStorageName(name))
             return null;
 
-        DB tx = provider.tx();
-        try {
-            return DBUtils.atomicGet(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
-                long storageID = mapStorages.get(computeStorageName(name));
-                return new MapDBStorage(this, name, storageID);
-            });
-        } finally {
-            tx.close();
-        }
+        return DBUtils.atomicGet(provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
+            long storageID = mapStorages.get(computeStorageName(name));
+            return new MapDBStorage(this, name, storageID);
+        });
+
     }
 
     @Override
@@ -179,23 +151,17 @@ public class MapDBStorageManager implements StorageManager {
 
     @Override
     public void clear() {
-        DB tx = provider.tx();
-        try {
-            DBUtils.atomic(tx, MAX_NUM_RETRIES, db -> {
-                HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
-                Iterator<String> keys = mapStorages.keySet().iterator();
-                ArrayList<String> toRemove = new ArrayList<>();
-                while (keys.hasNext())
-                    toRemove.add(keys.next());
-                for (String key : toRemove) {
-                    long storageID = mapStorages.get(key);
-                    mapStorages.remove(key);
-                    MapDBStorage.removeStorage(db, storageID);
-                }
-
-            });
-        } finally {
-            tx.close();
-        }
+        DBUtils.atomic(provider.txMaker(), MAX_NUM_RETRIES, db -> {
+            HTreeMap<String, Long> mapStorages = db.getHashMap(STORAGE_TABLE_NAME);
+            Iterator<String> keys = mapStorages.keySet().iterator();
+            ArrayList<String> toRemove = new ArrayList<>();
+            while (keys.hasNext())
+                toRemove.add(keys.next());
+            for (String key : toRemove) {
+                long storageID = mapStorages.get(key);
+                mapStorages.remove(key);
+                MapDBStorage.removeStorage(db, storageID);
+            }
+        });
     }
 }
