@@ -39,6 +39,13 @@ public class DBUtils {
      * @param code          The code to be executed atomically.
      */
     public static void atomic(TxMaker txMaker, int maxNumRetries, Procedure1<DB> code) {
+        if (txMaker == null)
+            throw new NullPointerException("The txMaker object is 'null'");
+        if (maxNumRetries < 0)
+            throw new IllegalArgumentException("The maximum number of retries is less than 0: " + maxNumRetries);
+        if (code == null)
+            throw new NullPointerException("The code to execute is 'null'");
+
         Exception lastException = null;
         for (int i = 0; i < maxNumRetries; i++) {
             DB db = txMaker.makeTx();
@@ -69,6 +76,11 @@ public class DBUtils {
      * @return The result from execution of code.
      */
     public static <Out> Out atomicGet(TxMaker txMaker, int maxNumRetries, Function1<DB, Out> code) {
+        if (txMaker == null)
+            throw new NullPointerException("The txMaker object is 'null'");
+        if (code == null)
+            throw new NullPointerException("The code to execute is 'null'");
+
         Exception lastException = null;
         for (int i = 0; i < maxNumRetries; i++) {
             DB db = txMaker.makeTx();
