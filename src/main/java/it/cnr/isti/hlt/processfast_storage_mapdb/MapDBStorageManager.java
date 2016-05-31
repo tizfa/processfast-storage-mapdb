@@ -164,4 +164,15 @@ public class MapDBStorageManager implements StorageManager {
             }
         });
     }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[");
+        for (String name : getStorageNames()) {
+            sb.append(name + ",");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
 }
