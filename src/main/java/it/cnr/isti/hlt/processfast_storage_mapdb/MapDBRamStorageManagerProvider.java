@@ -22,6 +22,8 @@ package it.cnr.isti.hlt.processfast_storage_mapdb;
 import it.cnr.isti.hlt.processfast.data.StorageManager;
 import org.mapdb.DBMaker;
 
+import java.io.File;
+
 /**
  * @author Tiziano Fagni (tiziano.fagni@isti.cnr.it)
  */
@@ -42,6 +44,11 @@ public class MapDBRamStorageManagerProvider extends AbstractMapDBStorageManagerP
          * The data is stored outside heap (no GC involved) and using serialization.
          */
         MEMORY_DIRECT_DB,
+
+        /**
+         * The data is stotred on a file.
+         */
+        FILE_DB
     }
 
 
@@ -50,6 +57,12 @@ public class MapDBRamStorageManagerProvider extends AbstractMapDBStorageManagerP
      */
     private MapDBRamStorageType storageType = MapDBRamStorageType.HEAP_DB;
 
+
+    /**
+     * The storage filename. Used only when {@link MapDBRamStorageType#FILE_DB} is
+     * used.
+     */
+    private String storageFilename;
 
     @Override
     public StorageManager getStorageManager(String clientID) {
@@ -62,8 +75,10 @@ public class MapDBRamStorageManagerProvider extends AbstractMapDBStorageManagerP
             txMaker = DBMaker.newMemoryDirectDB().closeOnJvmShutdown().makeTxMaker();
         else if (storageType == MapDBRamStorageType.MEMORY_DB)
             txMaker = DBMaker.newMemoryDB().closeOnJvmShutdown().makeTxMaker();
-        else
+        else if (storageType == MapDBRamStorageType.HEAP_DB)
             txMaker = DBMaker.newHeapDB().closeOnJvmShutdown().makeTxMaker();
+        else
+            txMaker = DBMaker.newFileDB(new File(storageFilename)).closeOnJvmShutdown().makeTxMaker();
     }
 
     @Override
@@ -76,9 +91,10 @@ public class MapDBRamStorageManagerProvider extends AbstractMapDBStorageManagerP
         return storageType;
     }
 
-    public void setStorageType(MapDBRamStorageType storageType) {
+    public void setStorageType(MapDBRamStorageType storageType, String filename) {
         if (storageType == null)
             throw new NullPointerException("The storage type is 'null'");
         this.storageType = storageType;
+        this.storageFilename = filename;
     }
 }

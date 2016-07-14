@@ -207,6 +207,46 @@ public class MapDBArray<T extends Serializable> implements Array<T> {
     }
 
     @Override
+    public void appendValues(Collection<T> values) {
+        if (values == null)
+            throw new NullPointerException("The specified collection of values is 'null'");
+        if (values.isEmpty())
+            throw new IllegalArgumentException("The collection of values is empty");
+
+        appendValues(values.iterator(), values.size());
+    }
+
+    @Override
+    public void appendValues(Iterator<T> values, long numBufferedItems) {
+        ArrayList<T> buffered = new ArrayList<>();
+        while (values.hasNext()) {
+            buffered.add(values.next());
+            if (buffered.size() >= numBufferedItems) {
+                DBUtils.atomic(storage.sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+                    long s = size(db);
+                    long numItems = buffered.size();
+                    Iterator<T> items = buffered.iterator();
+                    resize(db, s + numItems);
+                    for (long i = s; i < s + numItems; i++)
+                        setValue(db, i, items.next());
+                });
+                buffered.clear();
+            }
+        }
+        if (buffered.size() > 0) {
+            DBUtils.atomic(storage.sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
+                long s = size(db);
+                long numItems = buffered.size();
+                Iterator<T> items = buffered.iterator();
+                resize(db, s + numItems);
+                for (long i = s; i < s + numItems; i++)
+                    setValue(db, i, items.next());
+            });
+        }
+
+    }
+
+    @Override
     public T getDefaultValue() {
         return DBUtils.atomicGet(storage.sm.provider.txMaker(), MAX_NUM_RETRIES, db -> {
             return getDefaultValue(db);
